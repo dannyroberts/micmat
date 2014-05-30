@@ -16,17 +16,17 @@ rm libmicmat.so
 ########### Build library
 source mic_settings.sh
 
-echo -e "Compiling C library. \n\n"
+echo -e "~=~=~=~=~=~=~=~=~=~=~=~=~ Compiling C library ~=~=~=~=~=~=~=~=~=~=~=~=~ \n\n"
 
  icc -c micmat.c -o micmat.o -V -O3 -std=c99 -openmp \
  -fpic -mkl
 
-echo -e "Linking C library. \n\n"
+echo -e "~=~=~=~=~=~=~=~=~=~=~=~=~ Linking C library ~=~=~=~=~=~=~=~=~=~=~=~=~ \n\n"
 
 icc -V -shared -o libmicmat.so micmat.o -lc \
  -fpic -lm -mkl
 
-echo -e "Building Cython wrapper. \n\n"
+echo -e "~=~=~=~=~=~=~=~=~=~=~=~=~ Building Cython wrapper ~=~=~=~=~=~=~=~=~=~=~=~=~ \n\n"
 
 ############ Cython wrapping
 CC="icc"   \

@@ -13,14 +13,22 @@ MICMat (MIC Matrix) is a module that enables interfacing with Intel's Xeon Phi C
 
 # Installation
 ## Dependencies
+MICMat requires:
+
+* Python 2.7. The [Anaconda](http://continuum.io/downloads) distribution is recommended
+* Intel Composer XE 2013 SP 1
+
 
 ## Compilation
+1. From within the micmat sub-directory, build the package:  
+    . micmat_build.sh
 
 
 # Usage
 
 # License (BSD 3-Clause)
 Copyright (c) 2014, Oren Rippel and Ryan P. Adams
+
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
