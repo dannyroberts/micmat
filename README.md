@@ -20,11 +20,28 @@ MICMat requires:
 
 
 ## Compilation
-1. From within the micmat sub-directory, build the package:  
-    . micmat_build.sh
+From within the micmat sub-directory, build the package:  
+```    
+. micmat_build.sh
+```
+
+## Import into Python
+In order import MICMat into Python and to maximize performance on Xeon Phi, various environment variables and paths must be configured in advance. These are all automatically set by the file `mic_settings.sh` with the command
+```
+source $MICMAT_PATH/mic_settings.sh
+```
+where `$MICMAT_PATH` contains the path to the package. It may be convenient to add this command to the bash profile. 
+
+In order to import the package into Python, simply add the command
+```
+import micmat_wrap as mm
+```
+to the top of your pure Python file.
 
 
 # Usage
+
+
 
 # License (BSD 3-Clause)
 Copyright (c) 2014, Oren Rippel and Ryan P. Adams
