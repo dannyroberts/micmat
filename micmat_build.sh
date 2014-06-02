@@ -34,3 +34,6 @@ CXX="icc"   \
 CFLAGS="-I$MICMAT_PATH"   \
 LDFLAGS="-L$MICMAT_PATH"   \
     python micmat_setup.py build_ext -i
+
+
+echo -e "\n\n\n\n\n\n\n\n"

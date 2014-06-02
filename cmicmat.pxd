@@ -22,6 +22,8 @@ cdef extern from "micmat.h":
 
     void fill_zeros(int N, float *A, int offloaded)
 
+    void fill_zeros_int(int N, int *A, int offloaded)
+
     void fill_ones(int N, float *A, int offloaded)
 
     float *ones_mic(int N)
@@ -58,17 +60,21 @@ cdef extern from "micmat.h":
 
     float normo(int N, float *A)
 
-    void deepcopy(int N, float *A, float *B)
-
     float *unalign_host(int N, float *A)
 
     float output_float(float *A)
 
     void copy(int N, float *A, float *B, int offloaded)
 
+    void copy_int(int N, int *A, int *B, int offloaded)
+
     void replace_host(int N, float *A, float *B)
 
     void replace_mic(int N, float *A, float *B)
+
+    void replace_host_int(int N, int *A, int *B)
+
+    void replace_mic_int(int N, int *A, int *B)
 
     void replace_partial_host(int N_A, int SHIFT_A, float *A, int N_B, int SHIFT_B, float *B)
 
@@ -98,11 +104,15 @@ cdef extern from "micmat.h":
 
     void offload_mic(int N, float *A)
 
+    void offload_mic_int(int N, int *A)
+
     void pull_mic(int N, float *A)
 
     void push_mic(int N, float *A)
 
     float *cast_float(int N, int *A, int offloaded)
+
+    int *cast_int(int N, float *A, int offloaded)
 
     void free_host(int N, float *A)
 
@@ -131,6 +141,10 @@ cdef extern from "micmat.h":
     float sumo(int N, float *A)
 
     void convolve(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int tight)
+
+    int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int *ARGMAXS, int argmaxs_fixed)
+
+    void convolve_gradient(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, int *ARGMAXS, float *D_OUTPUTS, int pool_radius, float *D_INPUTS, float *D_FILTERS)
 
     void check_mic_status()
 

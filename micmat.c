@@ -70,9 +70,21 @@ void fill_zeros(int N, float *restrict A, int offloaded){
   #pragma offload target(mic:MIC_DEV) if(offloaded == 1) \ 
   in(A:length(0) REUSE)
   { 
-    #pragma omp parallel for
-        for (int i = 0; i < N; i++)
-          A[i] = 0.f;
+    int n;
+    #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
+          A[n] = 0.f;
+  }
+}
+
+void fill_zeros_int(int N, int *restrict A, int offloaded){
+  #pragma offload target(mic:MIC_DEV) if(offloaded == 1) \ 
+  in(A:length(0) REUSE)
+  { 
+    int n;
+    #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
+          A[n] = 0;
   }
 }
 
@@ -80,19 +92,37 @@ void fill_ones(int N, float *restrict A, int offloaded){
   #pragma offload target(mic:MIC_DEV) if(offloaded == 1) \ 
   in(A:length(0) REUSE)
   { 
-    #pragma omp parallel for
-        for (int i = 0; i < N; i++)
+    int i;
+    #pragma omp parallel for private(i)
+        for (i = 0; i < N; i++)
           A[i] = 1.f;
   }
+}
+
+// convert linear index to tensor index
+__attribute__((target(mic:MIC_DEV))) int ti(int a, int b, int c, int d, int B, int C, int D){
+    return (a*B*C*D + b*C*D + c*D + d);
+}
+
+// convert tensor index to linear index
+__attribute__((target(mic:MIC_DEV))) int it(int i, int dim, int B, int C, int D){
+    int s;
+
+    if (dim == 0) s = i / (B*C*D);
+    else if (dim == 1) s = (i % (B*C*D)) / (C*D);
+    else if (dim == 2) s = (i % (C*D)) / D;
+    else if (dim == 3) s = i % D;
+
+    return s;
 }
 
 __attribute__((target(mic:MIC_DEV))) float *zeros_mic(int N){
     // float *restrict A = _mm_malloc(N*sizeof(float), 64);
     float *restrict A = (float *) malloc(N*sizeof(float));
     
-
-    #pragma omp parallel for
-        for (int i = 0; i < N; i++)
+    int i;
+    #pragma omp parallel for private(i)
+        for (i = 0; i < N; i++)
           A[i] = 0.f;
 
     return A;
@@ -103,9 +133,9 @@ __attribute__((target(mic:MIC_DEV))) float *ones_mic(int N){
     // float *restrict A = _mm_malloc(N*sizeof(float), 64);
     float *restrict A = (float *)malloc(N*sizeof(float));
     
-
-    #pragma omp parallel for
-        for (int i = 0; i < N; i++)
+    int i;
+    #pragma omp parallel for private(i)
+        for (i = 0; i < N; i++)
           A[i] = 1.f;
 
     return A;
@@ -150,8 +180,9 @@ float *slice_inds(int N, int *restrict indices, float *restrict A, int indices_o
     in(indices:length(N) ALLOC_FREE) \
     nocopy(A_sliced:length(N) ALLOC)
     {
-      #pragma omp parallel for
-      for (int n = 0; n < N; n++)
+      int n;
+      #pragma omp parallel for private(n)
+      for (n = 0; n < N; n++)
         A_sliced[n] = A[indices[n]];
     }
   }
@@ -161,8 +192,9 @@ float *slice_inds(int N, int *restrict indices, float *restrict A, int indices_o
     in(indices:length(0) REUSE) \
     nocopy(A_sliced:length(N) ALLOC)
     {
-      #pragma omp parallel for
-      for (int n = 0; n < N; n++)
+      int n;
+      #pragma omp parallel for private(n)
+      for (n = 0; n < N; n++)
         A_sliced[n] = A[indices[n]];
     }
   }
@@ -179,9 +211,10 @@ float *slice_cols(int N, int *restrict indices, int ROWS, int COLS, float *restr
     in(indices:length(N) ALLOC_FREE) \
     nocopy(A_sliced:length(N*ROWS) ALLOC)
     {
-      #pragma omp parallel for
-      for (int r = 0; r < ROWS; r++)
-        for (int n = 0; n < N; n++)
+      int n, r;
+      #pragma omp parallel for collapse(2) private(n, r)
+      for (r = 0; r < ROWS; r++)
+        for (n = 0; n < N; n++)
           A_sliced[r*N + n] = A[r*COLS + indices[n]];
     }
   }
@@ -191,9 +224,10 @@ float *slice_cols(int N, int *restrict indices, int ROWS, int COLS, float *restr
     in(indices:length(0) REUSE) \
     nocopy(A_sliced:length(N*ROWS) ALLOC)
     {
-      #pragma omp parallel for
-      for (int r = 0; r < ROWS; r++)
-        for (int n = 0; n < N; n++)
+      int n, r;
+      #pragma omp parallel for collapse(2) private(n, r)
+      for (r = 0; r < ROWS; r++)
+        for (n = 0; n < N; n++)
           A_sliced[r*N + n] = A[r*COLS + indices[n]];
     }
   }
@@ -210,9 +244,10 @@ float *slice_rows(int N, int *restrict indices, int ROWS, int COLS, float *restr
     in(indices:length(N) ALLOC_FREE) \
     nocopy(A_sliced:length(N*COLS) ALLOC)
     {
-      #pragma omp parallel for
-      for (int c = 0; c < COLS; c++)
-        for (int n = 0; n < N; n++)
+      int c, n;
+      #pragma omp parallel for collapse(2) private(n, c)
+      for (c = 0; c < COLS; c++)
+        for (n = 0; n < N; n++)
           A_sliced[n*COLS + c] = A[indices[n]*COLS + c];
     }
   }
@@ -222,9 +257,10 @@ float *slice_rows(int N, int *restrict indices, int ROWS, int COLS, float *restr
     in(indices:length(0) REUSE) \
     nocopy(A_sliced:length(N*COLS) ALLOC)
     {
-      #pragma omp parallel for
-      for (int c = 0; c < COLS; c++)
-        for (int n = 0; n < N; n++)
+      int c, n;
+      #pragma omp parallel for collapse(2) private(n, c)
+      for (c = 0; c < COLS; c++)
+        for (n = 0; n < N; n++)
           A_sliced[n*COLS + c] = A[indices[n]*COLS + c];
     }
   }
@@ -458,6 +494,20 @@ void offload_mic(int N, float *restrict A){
     }
 }
 
+void offload_mic_int(int N, int *restrict A){
+    _Offload_status mic_status;
+    OFFLOAD_STATUS_INIT(mic_status);
+    
+    #pragma offload_transfer target(mic:MIC_DEV) status(mic_status) \ 
+    in(A:length(N) ALLOC)
+
+    if (!mic_status.result == OFFLOAD_SUCCESS){
+        printf("Offload failed.\n");
+        if (mic_status.result == OFFLOAD_OUT_OF_MEMORY) {
+            printf("Offload failed due to insufficient memory.\n"); }
+    }
+}
+
 void pull_mic(int N, float *restrict A){
 
     #pragma offload_transfer target(mic:MIC_DEV) \ 
@@ -467,9 +517,9 @@ void pull_mic(int N, float *restrict A){
 float *unalign_host(int N, float *restrict A){
 
     float *restrict B = allocate_host(N);
-    #pragma omp parallel for
-    for (int n = 0; n < N; n++)
-        B[n] = A[n];
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N; n++) B[n] = A[n];
     return B;
 }
 
@@ -478,21 +528,11 @@ float output_float(float *restrict A){
   return S;
 }
 
-void deepcopy(int N, float *restrict A, float *restrict B){
-    // cblas_scopy(N, A, 1, B, 1);
-    #pragma offload target(mic:MIC_DEV) \ 
-    in(A:length(0) REUSE) \
-    in(B:length(0) REUSE)
-    { 
-        cblas_scopy(N, B, 1, A, 1);
-     }
-}
-
 void copy(int N, float *restrict A, float *restrict B, int offloaded){
     if (offloaded == 0){
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++)
-        A[n] = B[n];
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++) A[n] = B[n];
     }
 
     else{
@@ -508,9 +548,9 @@ void copy(int N, float *restrict A, float *restrict B, int offloaded){
 // copies B into A on host
 void replace_host(int N, float *restrict A, float *restrict B){
 
-    #pragma omp parallel for
-    for (int n = 0; n < N; n++)
-        A[n] = B[n];
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N; n++) A[n] = B[n];
     // cblas_scopy(N, B, 1, A, 1);
 }
 
@@ -523,11 +563,31 @@ void replace_mic(int N, float *restrict A, float *restrict B){
     }
 }
 
+void replace_host_int(int N, int *restrict A, int *restrict B){
+
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N; n++) A[n] = B[n];
+    // cblas_scopy(N, B, 1, A, 1);
+}
+
+void replace_mic_int(int N, int *restrict A, int *restrict B){
+    #pragma offload target(mic:MIC_DEV) \ 
+    in(B:length(0) REUSE) \
+    in(A:length(0) REUSE)
+    { 
+      int n;
+      #pragma omp parallel for private(n)
+      for (n = 0; n < N; n++) A[n] = B[n];
+    }
+}
+
 // copies B into A on host
 void replace_partial_host(int N_A, int SHIFT_A, float *restrict A, int N_B, int SHIFT_B, float *restrict B){
 
-    #pragma omp parallel for
-    for (int n = 0; n < N_B; n++)
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N_B; n++)
         A[SHIFT_A + n] = B[SHIFT_B + n];
     // cblas_scopy(N, B, 1, A, 1);
 }
@@ -569,14 +629,29 @@ float *cast_float(int N, int *restrict A, int offloaded){
   in(A:length(0) FREE) \
   nocopy(A_float:length(N) ALLOC)
   {
-    #pragma omp parallel for
-    for (int n = 0; n < N; n++){
-      A_float[n] = (float) A[n];
-    }
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N; n++) A_float[n] = (float) A[n];
   }
   
   free(A);
   return A_float;
+}
+
+int *cast_int(int N, float *restrict A, int offloaded){
+  int *restrict A_int = allocate_host_int(N);
+
+  #pragma offload target(mic:MIC_DEV) if(offloaded == 1) \
+  in(A:length(0) FREE) \
+  nocopy(A_int:length(N) ALLOC)
+  {
+    int n;
+    #pragma omp parallel for private(n)
+    for (n = 0; n < N; n++) A_int[n] = (int) A[n];
+  }
+  
+  free(A);
+  return A_int;
 }
 
 
@@ -605,9 +680,9 @@ void expo(int N, float *restrict A){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++)
-              vsExp(1, A+n, A+n);
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++) vsExp(1, A+n, A+n);
      }
 }
 
@@ -615,8 +690,9 @@ void clip(int N, float *restrict A, float LOWER, float UPPER){
     #pragma offload target(mic:MIC_DEV) \ 
     in(A:length(0) REUSE)
     { 
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++){
               if (A[n] < LOWER) A[n] = LOWER;
               if (A[n] > UPPER) A[n] = UPPER;
             }
@@ -627,8 +703,9 @@ void clip_low(int N, float *restrict A, float LOWER){
     #pragma offload target(mic:MIC_DEV) \ 
     in(A:length(0) REUSE)
     { 
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++){
               if (A[n] < LOWER) A[n] = LOWER;
             }
     }
@@ -639,8 +716,9 @@ void flooro(int N, float *restrict A){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++)
               vsFloor(1, A+n, A+n);
      }
 }
@@ -649,8 +727,9 @@ void sign(int N, float *restrict A){
   #pragma offload target(mic:MIC_DEV) \ 
     in(A:length(0) REUSE)
     { 
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++){
               if (A[n] >= 0) A[n] = 1.f;
               else A[n] = -1.f;
               
@@ -667,8 +746,9 @@ float *equal(int N, float *restrict A, float *restrict B){
     in(B:length(0) REUSE) \
     nocopy(S:length(N) ALLOC)
     {   
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++){
           max_AB = fmaxf(fabsf(A[n]), fabsf(B[n]));
           if (fabsf(A[n] - B[n]) <= 0.00001*max_AB) S[n] = 1.f;
           else S[n] = 0.f;
@@ -684,8 +764,9 @@ float *leq(int N, float *restrict A, float B){
     in(A:length(0) REUSE) \
     nocopy(S:length(N) ALLOC)
     {   
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++){
           if (A[n] <= B) S[n] = 1.f;
           else S[n] = 0.f;
         }
@@ -700,8 +781,9 @@ float *geq(int N, float *restrict A, float B){
     in(A:length(0) REUSE) \
     nocopy(S:length(N) ALLOC)
     {   
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++){
           if (A[n] >= B) S[n] = 1.f;
           else S[n] = 0.f;
         }
@@ -716,8 +798,9 @@ float *greater(int N, float *restrict A, float B){
     in(A:length(0) REUSE) \
     nocopy(S:length(N) ALLOC)
     {   
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++){
           if (A[n] > B) S[n] = 1.f;
           else S[n] = 0.f;
         }
@@ -733,8 +816,9 @@ float *elementwise_or(int N, float *restrict A, float *restrict B){
     in(B:length(0) REUSE) \
     nocopy(S:length(N) ALLOC)
     {   
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++){
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++){
           if ((A[n] != 0.f) || (B[n] != 0.f)) S[n] = 1.f;
           else S[n] = 0.f;
         }
@@ -750,13 +834,14 @@ float *labels_to_vectors(int N, int K, float *restrict A){
     nocopy(S:length(N*K) ALLOC)
     {   
     
-        #pragma omp parallel for
-        for (int n = 0; n < K*N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < K*N; n++)
           S[n] = 0;
 
     
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++)
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
           S[n*K + (int) A[n]] = 1;
     }
     return S;
@@ -767,8 +852,9 @@ void lg(int N, float *restrict A){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++)
               vsLn(1, A+n, A+n);
         // vsLn(N, A, A);
      }
@@ -778,9 +864,9 @@ void abso(int N, float *restrict A){
     #pragma offload target(mic:MIC_DEV) \ 
     in(A:length(0) REUSE)
     { 
-    
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
           vsAbs(1, A+n, A+n);
         // vsAbs(N, A, A);
      }
@@ -791,8 +877,9 @@ void sqrto(int N, float *restrict A){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
           vsSqrt(1, A+n, A+n);
         // vsSqrt(N, A, A);
      }
@@ -813,8 +900,9 @@ void powo(int N, float *restrict A, float b){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-        for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+        for (n = 0; n < N; n++)
           vsPowx(1, A+n, b, A+n);
           // vsPowx(N, A, b, A);
      }
@@ -843,9 +931,10 @@ void mult(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, flo
         in(A:length(0) REUSE) \ 
         in(X:length(0) REUSE)
         { 
-            #pragma omp parallel for
-            for (int r = 0; r < ROWS_A; r++)
-               for (int c = 0; c < COLS_A; c++)
+            int r, c;
+            #pragma omp parallel for collapse(2) private(r, c)
+            for (r = 0; r < ROWS_A; r++)
+               for (c = 0; c < COLS_A; c++)
                 A[r*COLS_A + c] = A[r*COLS_A + c] * X[r];
         }
     }
@@ -855,9 +944,10 @@ void mult(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, flo
         in(X:length(0) REUSE)
         { 
         
-            #pragma omp parallel for
-            for (int c = 0; c < COLS_A; c++)
-              for (int r = 0; r < ROWS_A; r++)
+            int r, c;
+            #pragma omp parallel for collapse(2) private(r, c)
+            for (c = 0; c < COLS_A; c++)
+              for (r = 0; r < ROWS_A; r++)
                 A[r*COLS_A + c] = A[r*COLS_A + c] * X[c];
         }
     }
@@ -875,8 +965,9 @@ void mult(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, flo
             in(X:length(0) REUSE)
             { 
             
-                 #pragma omp parallel for
-                  for (int n = 0; n < ROWS_A*COLS_A; n++)
+                 int n;
+                 #pragma omp parallel for private(n)
+                  for (n = 0; n < ROWS_A*COLS_A; n++)
                     vsMul(1, A+n, X+n, A+n);
                     // vsMul(ROWS_A*COLS_A, A, X, A);
              }
@@ -889,8 +980,9 @@ void invert(int N, float *restrict A){
     in(A:length(0) REUSE)
     { 
     
-        #pragma omp parallel for
-            for (int n = 0; n < N; n++)
+        int n;
+        #pragma omp parallel for private(n)
+            for (n = 0; n < N; n++)
               vsInv(1, A+n, A+n);
               // vsInv(N, A, A);
      }
@@ -902,10 +994,10 @@ void divide(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, f
         in(A:length(0) REUSE) \ 
         in(X:length(0) REUSE)
         { 
-        
-            #pragma omp parallel for
-            for (int r = 0; r < ROWS_A; r++)
-               for (int c = 0; c < COLS_A; c++)
+            int r, c;
+            #pragma omp parallel for collapse(2) private(r, c)
+            for (r = 0; r < ROWS_A; r++)
+               for (c = 0; c < COLS_A; c++)
                 A[r*COLS_A + c] = A[r*COLS_A + c] / X[r];
         }
     }
@@ -914,10 +1006,10 @@ void divide(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, f
         in(A:length(0) REUSE) \ 
         in(X:length(0) REUSE)
         { 
-        
-            #pragma omp parallel for
-            for (int c = 0; c < COLS_A; c++)
-              for (int r = 0; r < ROWS_A; r++)
+            int r, c;
+            #pragma omp parallel for collapse(2) private(r, c)
+            for (c = 0; c < COLS_A; c++)
+              for (r = 0; r < ROWS_A; r++)
                 A[r*COLS_A + c] = A[r*COLS_A + c] / X[c];
         }
     }
@@ -935,8 +1027,9 @@ void divide(int ROWS_A, int COLS_A, float *restrict A, int ROWS_X, int COLS_X, f
             in(X:length(0) REUSE)
             { 
 
-                #pragma omp parallel for
-                  for (int n = 0; n < ROWS_A*COLS_A; n++)
+                int n;
+                #pragma omp parallel for private(n)
+                  for (n = 0; n < ROWS_A*COLS_A; n++)
                     vsDiv(1, A+n, X+n, A+n);
                 // vsDiv(ROWS_A*COLS_A, A, X, A);
              }
@@ -1155,12 +1248,13 @@ int *max_axis(int ROWS_A, int COLS_A, float *restrict A, int AXIS){
     #pragma offload target(mic:MIC_DEV) \ 
         in(A:length(0) REUSE)
         {
-          #pragma omp parallel for
-          for (int n = 0; n < ROWS_A*COLS_A; n++)
+          int n;
+          #pragma omp parallel for private(n)
+          for (n = 0; n < ROWS_A*COLS_A; n++)
             {if (A[n] < A_MIN) A_MIN = A[n];}
           
-          #pragma omp parallel for
-          for (int n = 0; n < ROWS_A*COLS_A; n++)
+          #pragma omp parallel for private(n)
+          for (n = 0; n < ROWS_A*COLS_A; n++)
             A[n] = A[n] - A_MIN;
         }
 
@@ -1171,8 +1265,9 @@ int *max_axis(int ROWS_A, int COLS_A, float *restrict A, int AXIS){
         in(A:length(0) REUSE) \
         nocopy(S:length(COLS_A) ALLOC)
         {   
-            #pragma omp parallel for
-              for (int n = 0; n < COLS_A; n++){
+            int n;
+            #pragma omp parallel for private(n)
+              for (n = 0; n < COLS_A; n++){
                   S[n] = cblas_isamax(ROWS_A, A + n, COLS_A);
                   S[n] = S[n]*COLS_A + n;
                   }
@@ -1186,8 +1281,9 @@ int *max_axis(int ROWS_A, int COLS_A, float *restrict A, int AXIS){
         in(A:length(0) REUSE) \
         nocopy(S:length(ROWS_A) ALLOC)
         {   
-            #pragma omp parallel for
-              for (int n = 0; n < ROWS_A; n++){
+            int n;
+            #pragma omp parallel for private(n)
+              for (n = 0; n < ROWS_A; n++){
                 S[n] = cblas_isamax(COLS_A, A + n*COLS_A, 1);
                 S[n] = S[n] + n*COLS_A;
               }
@@ -1208,8 +1304,9 @@ int *max_axis(int ROWS_A, int COLS_A, float *restrict A, int AXIS){
     #pragma offload target(mic:MIC_DEV) \ 
         in(A:length(0) REUSE)
         {
-          #pragma omp parallel for
-          for (int n = 0; n < ROWS_A*COLS_A; n++)
+          int n;
+          #pragma omp parallel for private(n)
+          for (n = 0; n < ROWS_A*COLS_A; n++)
             A[n] = A[n] + A_MIN;
         }
 
@@ -1221,8 +1318,9 @@ void index_global_to_local(int ROWS, int COLS, int *restrict A, int AXIS){
         #pragma offload target(mic:MIC_DEV) \ 
         in(A:length(0) REUSE)
         {   
-            #pragma omp parallel for
-            for (int n = 0; n < COLS; n++){
+            int n;
+            #pragma omp parallel for private(n)
+            for (n = 0; n < COLS; n++){
                 A[n] = (A[n] - n)/COLS;}
         }
     }
@@ -1230,8 +1328,9 @@ void index_global_to_local(int ROWS, int COLS, int *restrict A, int AXIS){
         #pragma offload target(mic:MIC_DEV) \ 
         in(A:length(0) REUSE)
         {   
-            #pragma omp parallel for
-              for (int n = 0; n < ROWS; n++){
+            int n;
+            #pragma omp parallel for private(n)
+              for (n = 0; n < ROWS; n++){
                 A[n] = A[n] - n*COLS;
               }
         }
@@ -1250,6 +1349,144 @@ float sumo(int N, float *restrict A){
             free(Y);
         }
         return S;
+}
+
+int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int *ARGMAXS, int argmaxs_fixed){
+
+  int output_H = H - Y + 1;
+  int output_W = W - X + 1;
+  int pooled_H = ceil(((float) output_H)/pool_radius);
+  int pooled_W = ceil(((float) output_W)/pool_radius);
+
+  #pragma offload target(mic:MIC_DEV) \ 
+  in(INPUTS:length(0) REUSE) \ 
+  in(FILTERS:length(0) REUSE) \ 
+  in(OUTPUTS:length(0) REUSE) \
+  in(ARGMAXS:length(0) REUSE)
+  {
+      float convolution;
+      int n, k, h, w, c, y, x, lin_index, h_arg, w_arg;
+      if (argmaxs_fixed == 0){
+          #pragma omp parallel for private(n)
+          for (n = 0; n < N*K*pooled_H*pooled_W; n++) OUTPUTS[n] = -1.0e10;
+
+          #pragma omp parallel for collapse(4) private(n, k, h, w, convolution, c, y, x)
+          for (n = 0; n < N; n++){
+              for (k = 0; k < K; k++){                  
+                  // loop over 2D pre-pooled map given n, k
+                  for (h = 0; h < output_H; h++){
+                      for (w = 0; w < output_W; w++){
+                          // Code needs to not be parallelized from here on; make sure variables are not shared
+
+                          // compute convolution for a particular set of n, k, h, w
+                          // then push to pooled layer
+                          convolution = 0.f;
+                          for (c = 0; c < C; c++)
+                            for (y = 0; y < Y; y++)
+                              for (x = 0; x < X; x++)
+                                convolution += INPUTS[ti(n, c, h + y, w + x, C, H, W)]
+                                             * FILTERS[ti(k, c, y, x, C, Y, X)];
+
+                          // #pragma omp critical
+                          if (convolution > OUTPUTS[ti(n, k, h/pool_radius, w/pool_radius, K, pooled_H, pooled_W)]){
+                            OUTPUTS[ti(n, k, h/pool_radius, w/pool_radius, K, pooled_H, pooled_W)] = convolution;
+                            ARGMAXS[ti(n, k, h/pool_radius, w/pool_radius, K, pooled_H, pooled_W)] = ti(n, k, h, w, K, output_H, output_W);
+                          }
+                        
+                      }
+                  }
+              }
+          }
+      }
+
+      else{
+          #pragma omp parallel for private(n)
+          for (n = 0; n < N*K*pooled_H*pooled_W; n++) OUTPUTS[n] = 0.f;
+
+          #pragma omp parallel for collapse(7) private(n, k, h, w, c, y, x, lin_index, h_arg, w_arg)
+          // loop over pooled elements
+          for (n = 0; n < N; n++)
+              for (k = 0; k < K; k++)
+                    for (h = 0; h < pooled_H; h++)
+                        for (w = 0; w < pooled_W; w++)
+                            // add up convolution
+                              for (c = 0; c < C; c++)
+                                  for (y = 0; y < Y; y++)
+                                      for (x = 0; x < X; x++){
+                                          lin_index = ARGMAXS[ti(n, k, h, w, K, pooled_H, pooled_W)];
+                                          h_arg = it(lin_index, 2, K, output_H, output_W);
+                                          w_arg = it(lin_index, 3, K, output_H, output_W);
+                                          OUTPUTS[ti(n, k, h, w, K, pooled_H, pooled_W)] += INPUTS[ti(n, c, h_arg + y, w_arg + x, C, H, W)]
+                                                       * FILTERS[ti(k, c, y, x, C, Y, X)];
+
+                                      }
+      }
+         
+  }
+
+  return ARGMAXS;
+}
+
+void convolve_gradient(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, int *ARGMAXS, float *D_POOLED_OUTPUTS, int pool_radius, float *D_INPUTS, float *D_FILTERS){
+
+  int output_H = H - Y + 1;
+  int output_W = W - X + 1;
+  int pooled_H = ceil(((float) output_H)/pool_radius);
+  int pooled_W = ceil(((float) output_W)/pool_radius);
+
+  #pragma offload target(mic:MIC_DEV) \ 
+  in(INPUTS:length(0) REUSE) \ 
+  in(FILTERS:length(0) REUSE) \ 
+  in(ARGMAXS:length(0) REUSE) \
+  in(D_INPUTS:length(0) REUSE) \
+  in(D_POOLED_OUTPUTS:length(0) REUSE) \
+  in(D_FILTERS:length(0) REUSE)
+  {
+      int k, c, x, y, n, h, w, h_pooled, w_pooled, lin_index, h_arg, w_arg;
+
+      // filter gradient computation
+      #pragma omp parallel for collapse(7) private(k, c, x, y, n, h_pooled, w_pooled, lin_index, h_arg, w_arg)
+      // loop over elements of filter
+      for (k = 0; k < K; k++)
+          for (c = 0; c < C; c++)
+              for (x = 0; x < X; x++)
+                  for (y = 0; y < Y; y++)
+
+                      for (n = 0; n < N; n++)
+                          // loop over 2D map of pooled output
+                          for (h_pooled = 0; h_pooled < pooled_H; h_pooled++)
+                            for (w_pooled = 0; w_pooled < pooled_W; w_pooled++){
+                                // argmax is over the output image
+                                lin_index = ARGMAXS[ti(n, k, h_pooled, w_pooled, K, pooled_H, pooled_W)];
+                                h_arg = it(lin_index, 2, K, output_H, output_W);
+                                w_arg = it(lin_index, 3, K, output_H, output_W);
+
+                                D_FILTERS[ti(k, c, y, x, C, Y, X)] += D_POOLED_OUTPUTS[ti(n, k, h_pooled, w_pooled, K, pooled_H, pooled_W)]
+                                       * INPUTS[ti(n, c, h_arg + y, w_arg + x, C, H, W)];
+
+                                D_INPUTS[ti(n, c, h_arg + y, w_arg + x, C, H, W)] += D_POOLED_OUTPUTS[ti(n, k, h_pooled, w_pooled, K, pooled_H, pooled_W)]
+                                       * FILTERS[ti(k, c, y, x, C, Y, X)];
+                            }
+
+      // // input gradient computation
+      // #pragma omp parallel for collapse(7) private(n, c, h_pooled, w_pooled, k, x, y, lin_index, h_arg, w_arg)
+      // // loop over elements of input
+      // for (n = 0; n < N; n++)
+      //     for (c = 0; c < C; c++)
+      //         for (h_pooled = 0; h_pooled < pooled_H; h_pooled++)
+      //             for (w_pooled = 0; w_pooled < pooled_W; w_pooled++)
+      //                 for (k = 0; k < K; k++)
+      //                     for (x = 0; x < X; x++)
+      //                         for (y = 0; y < Y; y++){
+      //                           lin_index = ARGMAXS[ti(n, k, h_pooled, w_pooled, K, pooled_H, pooled_W)];
+      //                           h_arg = it(lin_index, 2, K, output_H, output_W);
+      //                           w_arg = it(lin_index, 3, K, output_H, output_W);
+  
+      //                           D_INPUTS[ti(n, c, h_arg + y, w_arg + x, C, H, W)] += D_POOLED_OUTPUTS[ti(n, k, h_pooled, w_pooled, K, pooled_H, pooled_W)]
+      //                                  * FILTERS[ti(k, c, y, x, C, Y, X)];
+      //                       }
+  
+  }
 }
 
 void convolve(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int tight){

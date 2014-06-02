@@ -170,16 +170,19 @@ cdef class MICMat:
             return self.shape
 
         if name == 'ROWS':
-            assert len(self.shape) == 2, 'MICMat shape is ' + `self.shape` + ', so cannot request for ROWS attribute.'
+            assert self.ndim == 2, 'MICMat shape is ' + `self.shape` + ', so cannot request for ROWS attribute.'
             return self.shape[0]
 
         if name == 'COLS':
-            assert len(self.shape) == 2, 'MICMat shape is ' + `self.shape` + ', so cannot request for COLS attribute.'
+            assert self.ndim == 2, 'MICMat shape is ' + `self.shape` + ', so cannot request for COLS attribute.'
             return self.shape[1]
 
         elif name == 'size':
             #return self.ROWS*self.COLS
             return np.prod(self.shape)
+
+        elif name == 'ndim':
+            return len(self.shape)
 
         elif name == 'dtype':
             return self.dtype
@@ -194,6 +197,9 @@ cdef class MICMat:
         if name == 'shape':
             # in pure Python need command of the form object.__setattr__(self, 'ROWS', value[0])
             # but here we're using extension types, so direct assignment is used
+            if self.size > 0:
+                assert self.size == np.prod(value), 'Assigned shape ' + `value` + ' does not match current shape ' + `self.shape` + '.'
+
             self.shape = value
             #self.ROWS = value[0]
             #self.COLS = value[1]
@@ -222,10 +228,25 @@ cdef class MICMat:
             self.dtype = 0
 
         elif dtype == 'int':
-            assert 1 == 2, 'Haven\'t implemented int casting yet.'
+            self.A_int = cmicmat.cast_int(self.size, self.A, self.offloaded)
             self.dtype = 1
 
         return self
+
+    def flatten(self):
+        self.shape = (self.size,)
+
+        return self
+
+    def reshape(self, shape):
+        if self.size > 0:
+                assert self.size == np.prod(shape), 'Assigned shape ' + `shape` + ' does not match current shape ' + `self.shape` + '.'
+
+        self.shape = shape
+        return self
+
+    def flatten_to_vectors(self):
+        return self.reshape((self.shape[0], np.product(self.shape[1:])))
 
 
 ######### copy and replacement
@@ -264,7 +285,13 @@ cdef class MICMat:
 
         if self.offloaded: 
             B.allocate(self.shape)
-            cmicmat.deepcopy(self.size, B.A, self.A)
+
+            if self.dtype == 0:
+                cmicmat.replace_mic(self.size, B.A, self.A)
+
+            elif self.dtype == 1:
+                B.astype('int')
+                cmicmat.replace_mic_int(self.size, B.A_int, self.A_int)
         
         else:
             B.copy_host(self)
@@ -278,7 +305,11 @@ cdef class MICMat:
         if type(B) == MICMat:
             B_MICMat = B
             assert self.shape == B_MICMat.shape, 'Matrix dimensions ' + `self.shape` + ' and ' + `B_MICMat.shape` + ' don\'t match in update.'
-            cmicmat.replace_host(self.size, self.A, B_MICMat.A)
+            if self.dtype == 0:
+                cmicmat.replace_host(self.size, self.A, B_MICMat.A)
+
+            elif self.dtype == 1:
+                cmicmat.replace_host_int(self.size, self.A_int, B_MICMat.A_int)                
 
         elif type(B) == np.ndarray:
             assert self.shape == B.shape, 'Matrix dimensions ' + `self.shape` + ' and ' + `B.shape` + ' don\'t match in update.'    
@@ -294,7 +325,11 @@ cdef class MICMat:
         if type(B) == MICMat:
             B_MICMat = B
             assert self.shape == B_MICMat.shape, 'Matrix dimensions ' + `self.shape` + ' and ' + `B_MICMat.shape` + ' don\'t match in update.'
-            cmicmat.replace_mic(self.size, self.A, B_MICMat.A)
+            if self.dtype == 0:
+                cmicmat.replace_mic(self.size, self.A, B_MICMat.A)
+
+            elif self.dtype == 1:
+                cmicmat.replace_mic_int(self.size, self.A_int, B_MICMat.A_int)
 
         elif type(B) == np.ndarray:
             assert self.shape == B.shape, 'Matrix dimensions ' + `self.shape` + ' and ' + `B.shape` + ' don\'t match in update.'
@@ -398,7 +433,12 @@ cdef class MICMat:
         return self
 
     def fill_zeros(self):
-        cmicmat.fill_zeros(self.size, self.A, self.offloaded)
+        if self.dtype == 0:
+            cmicmat.fill_zeros(self.size, self.A, self.offloaded)
+
+        elif self.dtype == 1:
+            cmicmat.fill_zeros_int(self.size, self.A_int, self.offloaded)
+
         return self  
 
     def fill_ones(self):
@@ -508,6 +548,50 @@ cdef class MICMat:
 
 
 ######### matrix operations
+    def convolve_and_pool_replace(self, MICMat inputs, argmaxs, MICMat filters, int pool_radius, int stride):
+        # asserts that check number of dimensions, sizes, etc
+        N, C, H, W = inputs.shape[0], inputs.shape[1], inputs.shape[2], inputs.shape[3]
+        K, Y, X = filters.shape[0], filters.shape[2], filters.shape[3]
+
+        pooled_H = np.ceil((<float> (H - Y + 1))/pool_radius)
+        pooled_W = np.ceil((<float> (W - X + 1))/pool_radius)
+        
+        assert self.shape == (N, K, pooled_H, pooled_W), 'Output shape is ' + self.shape + ' rather than ' + `(N, K, pooled_H, pooled_W)` + '.'
+
+        cdef MICMat argmaxs_MICMat
+        cdef int argmaxs_fixed = 1
+        if argmaxs is None:
+            argmaxs_MICMat = MICMat(self.shape)
+            argmaxs_MICMat.offload_mic()
+            argmaxs_MICMat.astype('int')
+            argmaxs_fixed = 0
+
+        else:
+            argmaxs_MICMat = argmaxs
+
+        argmaxs_MICMat.A_int = cmicmat.convolve_and_pool(N, C, H, W, inputs.A, K, Y, X, filters.A, self.A, pool_radius, argmaxs_MICMat.A_int, argmaxs_fixed)
+        
+
+        return argmaxs_MICMat
+
+    def convolve_gradient(self, MICMat inputs, MICMat filters, MICMat argmaxs,
+        MICMat gradient_pooled_outputs, MICMat gradient_inputs, int pool_radius, int stride):
+        # self is the filters gradient
+
+        N, C, H, W = inputs.shape[0], inputs.shape[1], inputs.shape[2], inputs.shape[3]
+        K, Y, X = filters.shape[0], filters.shape[2], filters.shape[3]
+
+        pooled_H = np.ceil((<float> (H - Y + 1))/pool_radius)
+        pooled_W = np.ceil((<float> (W - X + 1))/pool_radius)
+        
+        assert self.shape == filters.shape, 'Filter shape is ' + self.shape + ' rather than ' + `filters.shape` + '.'
+        assert gradient_inputs.shape == inputs.shape, 'Filter shape is ' + gradient_inputs.shape + ' rather than ' + `inputs.shape` + '.'
+        assert gradient_pooled_outputs.shape == (N, K, pooled_H, pooled_W), 'Output shape is ' + `self.shape` + ' rather than ' + `(N, K, pooled_H, pooled_W)` + '.'
+
+        cmicmat.convolve_gradient(N, C, H, W, inputs.A, K, Y, X, filters.A, argmaxs.A_int, gradient_pooled_outputs.A, 
+            pool_radius, gradient_inputs.A, self.A)
+        
+
     def convolve_replace(self, MICMat inputs, MICMat filters, int stride, style):
         # asserts that check number of dimensions, sizes, etc
         N, C, H, W = inputs.shape[0], inputs.shape[1], inputs.shape[2], inputs.shape[3]
@@ -516,11 +600,11 @@ cdef class MICMat:
         cdef int tight
         # output shape must take into account stride hyperparameters!
         if style == 'full':
-            assert self.shape == (N, K, H + Y - 1, W + X - 1), 'Output shape is ' + self.shape + ' rather than ' + `(N, K, H + Y - 1, W + X - 1)` + '.'
+            assert self.shape == (N, K, H + Y - 1, W + X - 1), 'Output shape is ' + `self.shape` + ' rather than ' + `(N, K, H + Y - 1, W + X - 1)` + '.'
             tight = 0
 
         elif style == 'tight':
-            assert self.shape == (N, K, H - Y + 1, W - X + 1), 'Output shape is ' + self.shape + ' rather than ' + `(N, K, H - Y + 1, W - X + 1)` + '.'
+            assert self.shape == (N, K, H - Y + 1, W - X + 1), 'Output shape is ' + `self.shape` + ' rather than ' + `(N, K, H - Y + 1, W - X + 1)` + '.'
             tight = 1
 
         else:
@@ -661,8 +745,12 @@ cdef class MICMat:
 
         if type(V) == MICMat:
             V_MICMat = V
-            assert (self.ROWS == V_MICMat.ROWS and self.COLS == V_MICMat.COLS) or (self.ROWS == V_MICMat.ROWS and V_MICMat.COLS == 1) or (V_MICMat.ROWS == 1 and self.COLS == V_MICMat.COLS) or (V_MICMat.ROWS == 1 and V_MICMat.COLS == 1), 'Matrix dimensions ' + `self.shape` + ' and ' + `V.shape` + ' don\'t match in update.'
-            cmicmat.update(self.ROWS, self.COLS, self.A, V_MICMat.ROWS, V_MICMat.COLS, V_MICMat.A, ALPHA)
+            if V_MICMat.ndim == 2:
+                assert (self.ROWS == V_MICMat.ROWS and self.COLS == V_MICMat.COLS) or (self.ROWS == V_MICMat.ROWS and V_MICMat.COLS == 1) or (V_MICMat.ROWS == 1 and self.COLS == V_MICMat.COLS) or (V_MICMat.ROWS == 1 and V_MICMat.COLS == 1), 'Matrix dimensions ' + `self.shape` + ' and ' + `V.shape` + ' don\'t match in update.'
+                cmicmat.update(self.ROWS, self.COLS, self.A, V_MICMat.ROWS, V_MICMat.COLS, V_MICMat.A, ALPHA)
+
+            else:
+                cmicmat.update(self.size, 1, self.A, V_MICMat.size, 1, V_MICMat.A, ALPHA)
 
         elif type(V) == np.float32 or type(V) == np.float64 or type(V) == float:
             if type(V) == np.float64:
@@ -676,8 +764,13 @@ cdef class MICMat:
 
         if type(V) == MICMat:
             V_MICMat = V
-            assert (self.ROWS == V_MICMat.ROWS and self.COLS == V_MICMat.COLS) or (self.ROWS == V_MICMat.ROWS and V_MICMat.COLS == 1) or (V_MICMat.ROWS == 1 and self.COLS == V_MICMat.COLS) or (V_MICMat.ROWS == 1 and V_MICMat.COLS == 1), 'Matrix dimensions ' + `self.shape` + ' and ' + `V.shape` + ' don\'t match in update.'
-            cmicmat.mult(self.ROWS, self.COLS, self.A, V_MICMat.ROWS, V_MICMat.COLS, V_MICMat.A)
+            if V_MICMat.ndim == 2:
+                assert (self.ROWS == V_MICMat.ROWS and self.COLS == V_MICMat.COLS) or (self.ROWS == V_MICMat.ROWS and V_MICMat.COLS == 1) or (V_MICMat.ROWS == 1 and self.COLS == V_MICMat.COLS) or (V_MICMat.ROWS == 1 and V_MICMat.COLS == 1), 'Matrix dimensions ' + `self.shape` + ' and ' + `V.shape` + ' don\'t match in update.'
+                cmicmat.mult(self.ROWS, self.COLS, self.A, V_MICMat.ROWS, V_MICMat.COLS, V_MICMat.A)
+
+            else: # multiply elementwise for tensors
+                cmicmat.mult(self.size, 1, self.A, V_MICMat.size, 1, V_MICMat.A)                
+        
         elif type(V) == np.float32 or type(V) == np.float64 or type(V) == float or type(V) == int:
             if type(V) == np.float64:
                 V = V.astype(np.float32)
