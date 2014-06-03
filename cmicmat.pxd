@@ -142,7 +142,7 @@ cdef extern from "micmat.h":
 
     void convolve(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int tight)
 
-    int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int *ARGMAXS, int argmaxs_fixed)
+    int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int stride, int *ARGMAXS, int argmaxs_fixed)
 
     void convolve_gradient(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, int *ARGMAXS, float *D_OUTPUTS, int pool_radius, float *D_INPUTS, float *D_FILTERS)
 

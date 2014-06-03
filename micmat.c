@@ -1351,7 +1351,7 @@ float sumo(int N, float *restrict A){
         return S;
 }
 
-int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int *ARGMAXS, int argmaxs_fixed){
+int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, int X, float *FILTERS, float *OUTPUTS, int pool_radius, int stride, int *ARGMAXS, int argmaxs_fixed){
 
   int output_H = H - Y + 1;
   int output_W = W - X + 1;
@@ -1374,8 +1374,8 @@ int *convolve_and_pool(int N, int C, int H, int W, float *INPUTS, int K, int Y, 
           for (n = 0; n < N; n++){
               for (k = 0; k < K; k++){                  
                   // loop over 2D pre-pooled map given n, k
-                  for (h = 0; h < output_H; h++){
-                      for (w = 0; w < output_W; w++){
+                  for (h = 0; h < output_H; h += stride){
+                      for (w = 0; w < output_W; w += stride){
                           // Code needs to not be parallelized from here on; make sure variables are not shared
 
                           // compute convolution for a particular set of n, k, h, w

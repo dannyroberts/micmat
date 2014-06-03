@@ -569,7 +569,7 @@ cdef class MICMat:
         else:
             argmaxs_MICMat = argmaxs
 
-        argmaxs_MICMat.A_int = cmicmat.convolve_and_pool(N, C, H, W, inputs.A, K, Y, X, filters.A, self.A, pool_radius, argmaxs_MICMat.A_int, argmaxs_fixed)
+        argmaxs_MICMat.A_int = cmicmat.convolve_and_pool(N, C, H, W, inputs.A, K, Y, X, filters.A, self.A, pool_radius, stride, argmaxs_MICMat.A_int, argmaxs_fixed)
         
 
         return argmaxs_MICMat
@@ -1129,11 +1129,11 @@ cdef class Scratch(MICMat):
 
     def contents_size(self, *args):
         if not args:
-            return sum([shape[0]*shape[1] for shape in self.shapes])
+            return sum([np.product(shape) for shape in self.shapes])
         
         else:
             index = args[0]
-            return sum([shape[0]*shape[1] for shape in self.shapes[:index]])
+            return sum([np.product(shape) for shape in self.shapes[:index]])
 
 def ping_each_core():
         print 'Pinging each core on the MIC.'
