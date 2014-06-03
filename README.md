@@ -9,6 +9,7 @@ MICMat (MIC Matrix) is a package that enables interfacing with Intel's Xeon Phi 
 
 * **Extensive matrix and tensor manipulation library**: Various matrix and multidimensional array operations are supported and are optimized for speed.
 
+The package is under development. Please let us know of any bugs you come across.
 
 
 # Installation
