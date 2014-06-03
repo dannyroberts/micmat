@@ -48,6 +48,7 @@ def test_convolution(time_only):
     outputs.offload_mic()
     outputs.fill_zeros()
 
+    print 'Computing convolution now.'
     timer.tic()
     argmaxs = outputs.convolve_and_pool_replace(inputs, None, filters, pool_radius, stride)
     test_time = timer.toc()
