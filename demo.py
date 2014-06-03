@@ -7,6 +7,8 @@
 #3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 #THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+
 import micmat_wrap as mm
 import numpy as np
 
@@ -25,10 +27,10 @@ def main():
     A.offload_mic()
     
     # compute the absolute value
-    print A.abs() 
+    A.abs() 
 
     # compute the exp()
-    print A.exp() 
+    A.exp() 
 
     # copy A as B
     B = A.deepcopy()
@@ -40,8 +42,9 @@ def main():
     C.dot_replace(A, B)
 
     # array broadcasting. A.mean(0) returns a row vector where each element is the mean along the corresponding column
-    print (A - A.mean(0)) / A.std(0)
+    B = (A - A.mean(0)) / A.std(0)
 
+    print 'File ran successfully.'
 
 if __name__ == '__main__':
     main()

@@ -649,7 +649,7 @@ cdef class MICMat:
         
         assert COLS_LEFT == ROWS_RIGHT, 'Matrix dimensions ' + `self.shape` + ' and ' + `V.shape` + ' don\'t match in matrix product.'
         
-        S = MICMat([ROWS_LEFT, COLS_RIGHT])
+        S = MICMat((ROWS_LEFT, COLS_RIGHT))
         if self.offloaded:
             S.offload_mic()
             
